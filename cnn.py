@@ -1,7 +1,13 @@
 from __future__ import print_function
 
 import numpy
+import time
 from PIL import Image
+
+
+import matplotlib as mpl; mpl.use('Agg')    
+#It is important to set the mode before import pyplot, otherwise we cannot graph
+import matplotlib.pyplot as plt
 
 import torch
 
@@ -22,7 +28,7 @@ torchvision.datasets.folder.IMG_EXTENSIONS.append('.tif')
 
 class Net(nn.Module):
 
-    fc_layers = 9600
+    fc_layers = 9600 #typically 9600 
     channels=3
     output=7
 
@@ -32,14 +38,13 @@ class Net(nn.Module):
         self.conv1 = nn.Conv2d(self.channels, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 10, kernel_size=5)
         self.conv3 = nn.Conv2d(10, 10, kernel_size=5)
-        #self.conv3 = nn.Conv2d(20, 10, kernel_size=5)
-        self.fc1 = nn.Linear(self.fc_layers, 500) #seven output classes
-        self.fc2 = nn.Linear(500, self.output)
+        self.fc1 = nn.Linear(self.fc_layers, 50) #seven output classes
+        self.fc2 = nn.Linear(50, self.output)
 
     def forward(self, x):
         x = F.relu(F.max_pool2d(self.conv1(x),2))
         x = F.relu(F.max_pool2d(self.conv2(x),2))
-        #x = F.relu(F.max_pool2d(self.conv3(x),2))
+        x = F.relu(F.max_pool2d(self.conv3(x),2))
         x = x.view(-1, self.fc_layers)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -66,6 +71,10 @@ def mnist_loader(workers=1, train_bool=True):
 #image = image / image.max()
 def gen_data_loader(workers=1, train_bool=True, ):
 
+
+    #expects a directory where each sub directory is a class
+    #The path variable is Top-level to train/test which contain this format
+
     path = '/nfs/stak/users/kramerer/diatom/Diatom_data/raw_data/grouped'
     if train_bool:
         path += '/train'
@@ -74,9 +83,9 @@ def gen_data_loader(workers=1, train_bool=True, ):
 
     transform_set = transforms.Compose(
             [
-                #transforms.ToPILImage(),
                 transforms.ToTensor(),
-                #transforms.Normalize( (.5, .5, .5), (.5,.5,.5)),
+                transforms.Lambda(lambda x: x/ torch.max(x)),
+                #transforms.Normalize(),
             ])
 
     image_data = torchvision.datasets.ImageFolder(
@@ -100,7 +109,15 @@ def target_cast(target):
     return target
     #return torch.Tensor([target]).long()
 
+
+def dump_graph():
+    #accept a unique name or generate one based on date/time
+    pass
+
 def train(model, data_loader, opt, epochs):
+
+    test_epochs = []
+    train_epochs = []
 
     test_loader = gen_data_loader(train_bool=False)
     model.train()
@@ -119,8 +136,16 @@ def train(model, data_loader, opt, epochs):
             loss.backward()
             opt.step()
            
+        print("="*30)
         print("Test Accuracy: ")
-        test(model, test_loader)
+        test_epochs.append(test(model, test_loader))
+        print("="*30)
+        print("Train Accuracy: ")
+        train_epochs.append(test(model, data_loader))
+        print("="*30)
+    print(test_epochs)
+    print(train_epochs)
+    import pdb; pdb.set_trace()
 
 
 def test(model, data_loader):
@@ -158,14 +183,28 @@ def test(model, data_loader):
     print("Guess bin: ", guess_bin)
     print("Correct bin: ", correct_bin)
 
-    return correct/total
+    return float(correct)/float(total)
+
+
+#assumes 0-epoch
+def graph_plotter(data_sets, y_labels, epochs, title="default_title"):
+    #Plot each dataset, assume they have similar X components for now\ 
+    #epochs is unused.
+
+    for s, l in zip(data_sets, y_labels):
+        plt.show(s, label=l)
+
+    #Move legend
+    plt.legend(loc="upper left")
+
+    #add a unique value so that we don't overwrite an old image
+    plt.savefig("img/" + title + time.time() + ".png")
 
 
 def main():
 
     print("Loading Data")
     loader = gen_data_loader()
-
 
     if mode == "gpu":
         model = Net().cuda()  # where mode is "cuda" or "cpu"
@@ -180,7 +219,7 @@ def main():
 
 
     print("Training Model")
-    train(model, loader, optimizer, 100)
+    train(model, loader, optimizer, 50)
     print("Training complete")
 
     test_loader = gen_data_loader(train_bool=False)
@@ -195,10 +234,11 @@ def main():
 
 if __name__ == '__main__':
     import sys;
+    mode = "gpu"
     if len(sys.argv) > 2:
         #anything other than the string "gpu" is treated as cpu
-        mode = sys.argv[1] or "gpu"
-    if len(sys.arg) > 3:
+        mode = sys.argv[1] or mode
+    if len(sys.argv) > 3:
         #again more command line hacks, this is just checking to see if we get
         #a third argument, in which case we assume that you meant to use the
         #mnist dataset. This is used for Erich's testing not much else. 
